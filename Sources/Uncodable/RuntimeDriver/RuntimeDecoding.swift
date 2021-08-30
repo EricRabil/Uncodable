@@ -115,6 +115,7 @@ prefix func * <P>(_ value: Any) -> P {
 @_optimize(speed)
 func RuntimeDecode<P>(_ type: Any.Type, from decoder: Decoder, tupleContext: @autoclosure () -> TupleUncodingContext = TupleUncodingContext()) throws -> P {
     if let decodable = type as? Decodable.Type, !(type is Undecodable.Type) {
+        // re-enter compile-time codable system
         return try *decodable.init(from: decoder)
     }
     

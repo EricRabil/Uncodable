@@ -32,6 +32,24 @@ extension Uncodable {
 }
 
 final class EnumTests: XCTestCase {
+    class NestedCodable: Codable, Hashable {
+        static func == (lhs: EnumTests.NestedCodable, rhs: EnumTests.NestedCodable) -> Bool {
+            lhs.value == rhs.value
+        }
+        
+        var value = 5
+        
+        init(value: Int) {
+            self.value = value
+        }
+        
+        init() {}
+        
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(value)
+        }
+    }
+    
     enum InlinableEnumeration: Uncodable, CustomizedUncodable {
         case inliningOne(namedValue: Bool, otherNamedValue: Bool)
         case mixedContent(namedValue: Bool, Bool)
@@ -47,6 +65,10 @@ final class EnumTests: XCTestCase {
                 .inliningPayload
             ])
         )
+    }
+    
+    enum NestedCodableTests: Uncodable {
+        case nested(NestedCodable)
     }
     
     func testInlinedEncoding() throws {
@@ -74,5 +96,20 @@ final class EnumTests: XCTestCase {
             .compare(.mixedContent(namedValue: true, false))
             .noContent
             .compare(.noContent)
+    }
+    
+    func testHeapEncoding() throws {
+        try NestedCodableTests
+            .nested(NestedCodable()).compare([
+                "type": "nested",
+                "payload": [
+                    "value": 5
+                ]
+            ])
+    }
+    
+    func testHeapDecoding() throws {
+        try NestedCodableTests
+            .nested(NestedCodable(value: 10)).compare(.nested(NestedCodable(value: 10)))
     }
 }
