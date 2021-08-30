@@ -6,3 +6,12 @@
 //
 
 import Foundation
+
+public protocol Undecodable: Decodable {
+}
+
+public extension Undecodable {
+    init(from decoder: Decoder) throws {
+        self = try RuntimeDecode(Self.self, from: decoder)
+    }
+}

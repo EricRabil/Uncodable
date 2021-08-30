@@ -1,107 +1,78 @@
 import XCTest
 import Foundation
 @testable import Uncodable
+import Runtime
 
-private extension Dictionary where Key: Hashable, Value == Any {
-    var hashable: [Key: AnyHashable] {
-        compactMapValues {
-            $0 as? AnyHashable
-        }
-    }
-}
-
-private func cast(_ value: Any) -> AnyHashable? {
-    switch value {
-    case let hashable as AnyHashable:
-        return hashable
-    case let dict as [String: Any]:
-        return dict.hashable
-    default:
-        return nil
-    }
-}
-
-internal func __XCTAssertEqual(_ a: Any, _ b: Any, _ message: String? = nil) {
-    let match: () -> Bool = {
-        guard let a = a as? AnyHashable, let b = b as? AnyHashable else {
-            return false
-        }
-        
-        return a == b
+extension Uncodable {
+    var data: Data {
+        try! JSONEncoder().encode(self)
     }
     
-    if let message = message {
-        XCTAssert(match(), message)
-    } else {
-        XCTAssert(match())
-    }
-}
-
-internal func _XCTAssertEqual(_ a: [Any], _ b: [Any], _ message: String? = nil) {
-    let match: () -> [Bool] = {
-        a.enumerated().map { index, a in
-            guard let a1 = cast(a), b.indices.contains(index), let b1 = cast(b[index]) else {
-                return false
-            }
-            
-            return a1 == b1
-        }
+    var json: String {
+        String(decoding: data, as: UTF8.self)
     }
     
-    if let message = message {
-        XCTAssert(!match().contains(false), message)
-    } else {
-        XCTAssert(!match().contains(false))
-    }
-}
-
-private extension MirroredValue {
-    var tupleValue: [Any] {
-        pureValue as! [Any]
-    }
-}
-
-final class TupleTests: XCTestCase {
-    func testNamedTuples() {
-        let tupleValue = MirroredValue((a: 0, b: 1, c: 2)).tupleValue
+    @discardableResult
+    func compare(_ dict: [String: AnyHashable]) throws -> Self.Type {
+        let json1 = try JSONSerialization.jsonObject(with: data, options: []) as! AnyHashable
         
-        XCTAssert(tupleValue is [[String: Int]], "tupleValue of named pairs should result in an array of dictionaries")
+        XCTAssertEqual(json1, dict)
         
-        XCTAssertEqual(tupleValue as! [[String: Int]], [
-            ["a": 0],
-            ["b": 1],
-            ["c": 2]
-        ])
+        return Self.self
     }
     
-    func testUnnamedTuples() {
-        let tupleValue = MirroredValue((1,2,3)).tupleValue
+    @discardableResult
+    func compare(_ value: Self) throws -> Self.Type {
+        let deserialized = try JSONDecoder().decode(Self.self, from: data)
         
-        XCTAssert(tupleValue is [Int], "tupleValue of an integer tuple should be an integer array")
+        XCTAssertEqual(deserialized.data, value.data)
         
-        XCTAssertEqual(tupleValue as! [Int], [1,2,3], "(1,2,3) should translate to [1,2,3]")
-    }
-    
-    func testMixedTuples() {
-        let tupleValue = MirroredValue((0, b: 1, 2)).tupleValue
-        
-        _XCTAssertEqual(tupleValue, [
-            0,
-            ["b": 1],
-            2
-        ])
+        return Self.self
     }
 }
 
 final class EnumTests: XCTestCase {
-    enum TestEnum: Unencodable {
-        case bitch(Int)
+    enum InlinableEnumeration: Uncodable, CustomizedUncodable {
+        case inliningOne(namedValue: Bool, otherNamedValue: Bool)
+        case mixedContent(namedValue: Bool, Bool)
+        case otherMixedContent(namedValue: Bool, Bool)
+        case otherMixedContent1(namedValue: Bool, Bool)
+        case otherMixedContent2(namedValue: Bool, Bool)
+        case noContent
+        
+        static let configuration: UncodableCustomizationDefinition = .customized(
+            .enumCustomizations([
+                .caseNameKey("type"),
+                .mixedPayloadResolutionStrategy(.unnamedToRemainder(key: "remainder")),
+                .inliningPayload
+            ])
+        )
     }
     
-    func testBasicEnum() throws {
-        let encoded = String(decoding: try JSONEncoder().encode(TestEnum.bitch(5)), as: UTF8.self)
-        let reference = String(decoding: try JSONSerialization.data(withJSONObject: ["type": "bitch", "value": 5], options: []), as: UTF8.self)
-        
-        XCTAssert(encoded == reference)
+    func testInlinedEncoding() throws {
+        try InlinableEnumeration
+            .inliningOne(namedValue: true, otherNamedValue: false).compare([
+                "type": "inliningOne",
+                "namedValue": true,
+                "otherNamedValue": false
+            ])
+            .mixedContent(namedValue: false, true).compare([
+                "type": "mixedContent",
+                "namedValue": false,
+                "remainder": [true]
+            ])
+            .noContent.compare([
+                "type": "noContent"
+            ])
+    }
+    
+    func testInlinedDecoding() throws {
+        try InlinableEnumeration
+            .inliningOne(namedValue: true, otherNamedValue: false)
+            .compare(.inliningOne(namedValue: true, otherNamedValue: false))
+            .mixedContent(namedValue: true, false)
+            .compare(.mixedContent(namedValue: true, false))
+            .noContent
+            .compare(.noContent)
     }
 }
